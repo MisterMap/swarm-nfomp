@@ -3,9 +3,9 @@ import numpy as np
 
 class Position2D:
     def __init__(self, x, y, angle):
-        self._x = x
-        self._y = y
-        self._angle = angle
+        self._x: np.ndarray = x
+        self._y: np.ndarray = y
+        self._angle: np.ndarray = angle
 
     @property
     def rotation(self):
