@@ -76,3 +76,14 @@ class RectangleRegionArray:
 
     def __len__(self):
         return len(self.min_x)
+
+
+def unfold_angles(angles: torch.Tensor):
+    angles: torch.Tensor = wrap_angles(angles)
+    delta: torch.Tensor = angles[1:] - angles[:-1]
+    delta = torch.where(delta > np.pi, delta - 2 * np.pi, delta)
+    delta = torch.where(delta < -np.pi, delta + 2 * np.pi, delta)
+    if len(angles.shape) == 1:
+        return angles[0] + torch.cat([torch.zeros(1), torch.cumsum(delta, dim=0)], dim=0)
+    return angles[0, None] + torch.cat([torch.zeros(1, delta.shape[1]), torch.cumsum(delta, dim=0)],
+                                       dim=0)

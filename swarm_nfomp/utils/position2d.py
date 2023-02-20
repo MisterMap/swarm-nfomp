@@ -68,3 +68,8 @@ class Position2D:
 
     def __eq__(self, other):
         return (np.all(self.x == other.x)) and (np.all(self.y == other.y)) and (np.all(self.rotation == other.rotation))
+
+    def as_matrix(self):
+        return np.array([[np.cos(self.rotation), -np.sin(self.rotation), self.x],
+                         [np.sin(self.rotation), np.cos(self.rotation), self.y],
+                         [0, 0, 1]])
