@@ -36,7 +36,8 @@ planner_parameters = {
     "steer_distance": 0.2,
     "goal_point_probability": 0.4,
     "a_star_side_count": 10,
-    "a_star_iterations": 60
+    "a_star_iterations": 60,
+    "path_factory": {}
 }
 
 task_parameters = {
@@ -58,10 +59,11 @@ task_parameters = {
         "max_x": 20,
         "min_y": 0,
         "max_y": 10
-    }
+    },
+
 }
 
-planner: ARRTPoint2DPlanner = UniversalFactory().make(ARRTPoint2DPlanner, planner_parameters)
+planner: RRTPosition2DPlanner = UniversalFactory().make(RRTPoint2DPlanner, planner_parameters)
 planner_task = UniversalFactory().make(Point2DPlannerTask, task_parameters)
 planner.set_planner_task(planner_task)
 

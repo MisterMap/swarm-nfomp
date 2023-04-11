@@ -1,5 +1,7 @@
 import numpy as np
 
+from swarm_nfomp.utils.math import wrap_angles
+
 
 class Position2D:
     def __init__(self, x, y, angle):
@@ -37,6 +39,9 @@ class Position2D:
     def as_vec(self):
         return np.array([self._x, self._y, self._angle]).T
 
+    def as_numpy(self):
+        return self.as_vec()
+
     def _mul_impl(self, other):
         x1 = other.x * np.cos(self._angle) - other.y * np.sin(self._angle) + self._x
         y1 = other.x * np.sin(self._angle) + other.y * np.cos(self._angle) + self._y
@@ -46,6 +51,12 @@ class Position2D:
     def __mul__(self, other):
         x1, y1, a1 = self._mul_impl(other)
         return other.__class__(x1, y1, a1)
+
+    def __sub__(self, other):
+        x1 = self._x - other.x
+        y1 = self._y - other.y
+        a1 = wrap_angles(self._angle - other.rotation)
+        return np.array([x1, y1, a1])
 
     def inv(self):
         x = -self.x * np.cos(self.rotation) - self.y * np.sin(self.rotation)
@@ -64,7 +75,8 @@ class Position2D:
         return f"Position2D(x={self._x}, y={self._y}, angle={self._angle})"
 
     def distance(self, position):
-        return np.sqrt((position.x - self.x) ** 2 + (position.y - self.y) ** 2)
+        angle_delta = wrap_angles(self.rotation - position.rotation)
+        return np.sqrt((position.x - self.x) ** 2 + (position.y - self.y) ** 2 + angle_delta ** 2)
 
     def __eq__(self, other):
         return (np.all(self.x == other.x)) and (np.all(self.y == other.y)) and (np.all(self.rotation == other.rotation))
@@ -73,3 +85,13 @@ class Position2D:
         return np.array([[np.cos(self.rotation), -np.sin(self.rotation), self.x],
                          [np.sin(self.rotation), np.cos(self.rotation), self.y],
                          [0, 0, 1]])
+
+    def steer(self, point2, steer_distance: float):
+        distance = self.distance(point2)
+        if distance < steer_distance:
+            return point2
+        direction = (point2.as_numpy() - self.as_numpy())
+        direction[2] = wrap_angles(direction[2])
+        direction = direction / distance
+        return Position2D(self.x + steer_distance * direction[0], self.y + steer_distance * direction[1],
+                          self.rotation + steer_distance * direction[2])

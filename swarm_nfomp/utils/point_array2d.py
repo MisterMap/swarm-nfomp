@@ -1,3 +1,6 @@
+import numpy as np
+
+
 class PointArray2D:
     def __init__(self, x, y):
         assert x.shape == y.shape
@@ -21,3 +24,9 @@ class PointArray2D:
 
     def __repr__(self):
         return f"PointArray2D(x={self.x}, y={self.y})"
+
+    @classmethod
+    def interpolate(cls, point1, point2, interpolation_count):
+        x = np.linspace(point1.x, point2.x, interpolation_count)
+        y = np.linspace(point1.y, point2.y, interpolation_count)
+        return PointArray2D(x, y)

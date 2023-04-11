@@ -2,7 +2,7 @@ from typing import List
 
 import numpy as np
 
-
+from swarm_nfomp.utils.math import wrap_angles
 from swarm_nfomp.utils.position2d import Position2D
 
 
@@ -38,3 +38,11 @@ class PositionArray2D(Position2D):
 
     def __repr__(self):
         return f"PositionArray2D(x={self.x}, y={self.y}, angle={self.rotation})"
+
+    @classmethod
+    def interpolate(cls, point1: Position2D, point2: Position2D, interpolation_count: int):
+        x = np.linspace(point1.x, point2.x, interpolation_count)
+        y = np.linspace(point1.y, point2.y, interpolation_count)
+        delta_angle = wrap_angles(point2.rotation - point1.rotation)
+        angle = point1.rotation + np.linspace(0, delta_angle, interpolation_count)
+        return PositionArray2D(x, y, angle)

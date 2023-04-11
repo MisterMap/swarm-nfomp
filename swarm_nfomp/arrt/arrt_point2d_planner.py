@@ -4,12 +4,13 @@ from typing import Tuple
 import numpy as np
 
 from swarm_nfomp.arrt.a_star import AStar
-from swarm_nfomp.arrt.rrt_point2d_planner import RRTPoint2DPlanner, RRTStarParameters
+from swarm_nfomp.arrt.rrt_planner import RRTParameters
+from swarm_nfomp.arrt.rrt_point2d_planner import RRTPoint2DPlanner
 from swarm_nfomp.utils.point2d import Point2D
 
 
 @dataclasses.dataclass
-class ARRTPoint2DPlannerParameters(RRTStarParameters):
+class ARRTPoint2DPlannerParameters(RRTParameters):
     a_star_iterations: int
     a_star_side_count: int
 
