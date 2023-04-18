@@ -16,6 +16,7 @@ class RobotCollisionDetector(CollisionDetector[Position2D]):
         self.outside_rectangle_region = outside_rectangle_region
         self.robot_shape = robot_shape
         self.collision_step = collision_step
+        self.number_collision_between_checks = 0
 
     @staticmethod
     def affine_transform(position: Position2D):
@@ -36,10 +37,28 @@ class RobotCollisionDetector(CollisionDetector[Position2D]):
     def is_collision_for_array(self, robot_positions: List[Position2D]) -> np.array:
         return np.array([self.is_collision(robot_position) for robot_position in robot_positions])
 
-    def is_collision_between(self, point1, point2):
+    def is_collision_between(self, point1, point2, first_position_free=True):
+        self.number_collision_between_checks += 1
         points_count = int(point1.distance(point2) / self.collision_step) + 1
         points = PositionArray2D.interpolate(point1, point2, points_count)
-        return not np.any(self.is_collision_for_array(points))
+        if not first_position_free:
+            return np.any(self.is_collision_for_array(points))
+        return np.any(self.is_collision_for_array(points[1:]))
+
+    def steer(self, point1, point2, distance):
+        self.number_collision_between_checks += 1
+        point2 = point1.steer(point2, distance)
+        points_count = int(point1.distance(point2) / self.collision_step) + 1
+        points = PositionArray2D.interpolate(point1, point2, points_count)
+        collisions = self.is_collision_for_array(points)
+        nonzero = np.nonzero(collisions)[0]
+        if len(nonzero) == 0:
+            index = -1
+        elif nonzero[0] == 0:
+            index = 0
+        else:
+            index = nonzero[0] - 1
+        return points[index]
 
     @classmethod
     def from_dict(cls, data: Dict):

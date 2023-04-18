@@ -3,7 +3,8 @@ from typing import Tuple, Optional
 
 import numpy as np
 
-from swarm_nfomp.arrt.a_star import AStar
+from swarm_nfomp.arrt.a_star import AStar, GridPlannerConfig
+from swarm_nfomp.arrt.eggs_arrt_adapter import EGGSARRTAdapter
 from swarm_nfomp.arrt.rrt_planner import RRTParameters, RRTPlanner
 from swarm_nfomp.planner.planner import State, Path
 
@@ -25,14 +26,27 @@ class Plane:
         return self.start_point + self.plane_vector_x * plane_point[0] + self.plane_vector_y * plane_point[1]
 
 
+class GridPlannerFactory:
+    def __init__(self, parameters: GridPlannerConfig):
+        self._parameters = parameters
+
+    def make(self):
+        if self._parameters.grid_planner_type == "a_star":
+            return AStar(self._parameters)
+        elif self._parameters.grid_planner_type == "eggs":
+            return EGGSARRTAdapter(self._parameters)
+        raise ValueError(f"Unknown grid planner type: {self._parameters.grid_planner_type}")
+
+
 class ARRTPlanner(RRTPlanner[State]):
-    def __init__(self, parameters: ARRTPoint2DPlannerParameters):
+    def __init__(self, parameters: ARRTPoint2DPlannerParameters, grid_planner_factory: GridPlannerFactory):
         super().__init__(parameters)
         self._parameters = parameters
         self._random_target_point = None
         self._random_plane_point = None
         self._nearest_point = None
         self._plane: Optional[Plane] = None
+        self._grid_planner = grid_planner_factory.make()
 
     def plan(self):
         for i in range(self._parameters.iterations):
@@ -46,15 +60,18 @@ class ARRTPlanner(RRTPlanner[State]):
         self._nearest_point = nearest_node.point
         self._calculate_plane()
         node_dict = {(0, 0): nearest_node}
-        a_star_planner = AStar((0, 0), (self._plane.size_x, 0), self._a_star_collision_function)
-        a_star_planner.step()
+        self._grid_planner.setup((0, 0), (self._plane.size_x, 0), self._grid_collision_function)
+        self._grid_planner.step()
         for i in range(self._parameters.a_star_iterations):
-            result = a_star_planner.step()
+            result = self._grid_planner.step()
             if result is None:
                 break
             current_state, parent_state = result
             parent_node = node_dict[parent_state]
-            node = self.tree.add_point(self._state_from_location(current_state), parent_node)
+            state_position = self._state_from_location(current_state)
+            node = self.tree.add_point(state_position, parent_node)
+            if state_position.distance(self.planner_task.goal) < self._parameters.goal_threshold:
+                self.is_goal_reached = True
             node_dict[current_state] = node
 
     def _calculate_plane(self):
@@ -72,10 +89,10 @@ class ARRTPlanner(RRTPlanner[State]):
             plane_vector_y=delta_y / size_y
         )
 
-    def _a_star_collision_function(self, point_location1: Tuple[int, int], point_location2: Tuple[int, int]):
+    def _grid_collision_function(self, point_location1: Tuple[int, int], point_location2: Tuple[int, int]):
         point1 = self._state_from_location(point_location1)
         point2 = self._state_from_location(point_location2)
-        return not self.planner_task.collision_detector.is_collision_between(point1, point2)
+        return self.planner_task.collision_detector.is_collision_between(point1, point2)
 
     def _state_from_location(self, current_state):
         vector = self._plane.get_vector(current_state)

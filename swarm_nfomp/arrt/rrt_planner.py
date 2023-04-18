@@ -36,6 +36,7 @@ class RRTParameters:
     iterations: int
     steer_distance: float
     goal_point_probability: float
+    goal_threshold: float
 
 
 class RRTPlanner(Planner[State]):
@@ -52,8 +53,10 @@ class RRTPlanner(Planner[State]):
             random_point = self._sample_random_point_with_goal_point()
             nearest_node = self.tree.nearest_node(random_point)
             new_point = nearest_node.point.steer(random_point, self._parameters.steer_distance)
-            if self.planner_task.collision_detector.is_collision_between(nearest_node.point, new_point):
+            if not self.planner_task.collision_detector.is_collision_between(nearest_node.point, new_point):
                 self.tree.add_point(new_point, nearest_node)
+                if new_point.distance(self.planner_task.goal) < self._parameters.goal_threshold:
+                    self.is_goal_reached = True
         return self._calculate_path()
 
     def _sample_random_point_with_goal_point(self):

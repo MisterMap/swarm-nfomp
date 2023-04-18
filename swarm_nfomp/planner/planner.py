@@ -33,9 +33,11 @@ class Path(Generic[State]):
 class Planner(Generic[State]):
     def __init__(self):
         self.planner_task = None
+        self.is_goal_reached = False
 
     def set_planner_task(self, task: PlannerTask[State]):
         self.planner_task = task
+        self.is_goal_reached = False
         self.setup()
 
     def setup(self):

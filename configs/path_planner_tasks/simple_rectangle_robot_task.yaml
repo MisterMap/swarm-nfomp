@@ -10,7 +10,7 @@ collision_detector:
   robot_shape: [
     [ -1, -0.5 ], [ -1, 0.5 ], [ 1, 0.5 ], [ 1, -0.5 ]
   ]
-  collision_step: 0.1
+  collision_step: 0.01
 
 start:
   x: -3

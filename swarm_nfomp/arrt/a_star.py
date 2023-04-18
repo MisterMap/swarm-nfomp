@@ -1,11 +1,30 @@
+import dataclasses
 import heapq
 from typing import Tuple, Optional, Dict
 
 import numpy as np
 
 
+@dataclasses.dataclass
+class GridPlannerConfig:
+    padding_x: int
+    padding_y: int
+    grid_planner_type: str
+
+
 class AStar(object):
-    def __init__(self, start: Tuple[int, int], goal: Tuple[int, int], collision_function):
+    def __init__(self, parameters: GridPlannerConfig):
+        self._start = None
+        self._goal = None
+        self._closed = set()
+        self._opened = []
+        self._cost = {}
+        self._parent: Dict[Tuple[int, int], Optional[Tuple[int, int]]] = {}
+        self._collision_function = None
+        self._is_goal_reached = False
+        self._parameters = parameters
+
+    def setup(self, start: Tuple[int, int], goal: Tuple[int, int], collision_function):
         self._start = start
         self._goal = goal
         self._closed = set()
@@ -45,10 +64,15 @@ class AStar(object):
         ]
         result = []
         for successor_state in successor_states:
-            if successor_state not in self._closed and not self._collision_function(state, successor_state):
+            if successor_state not in self._closed and self._check_bounds(state) and not self._collision_function(state,
+                                                                                                                  successor_state):
                 result.append(successor_state)
         return result
 
     def _calculate_heuristic(self, state):
         return np.abs(state[0] - self._goal[0]) + np.abs(state[1] - self._goal[1])
         # return np.sqrt((state[0] - self._goal[0]) ** 2 + (state[1] - self._goal[1]) ** 2)
+
+    @staticmethod
+    def _check_bounds(state):
+        return 0 <= state[0]
