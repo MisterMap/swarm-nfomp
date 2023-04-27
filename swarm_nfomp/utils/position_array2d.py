@@ -46,3 +46,7 @@ class PositionArray2D(Position2D):
         delta_angle = wrap_angles(point2.rotation - point1.rotation)
         angle = point1.rotation + np.linspace(0, delta_angle, interpolation_count)
         return PositionArray2D(x, y, angle)
+
+    @classmethod
+    def from_dict(cls, parameters):
+        return cls.from_vec(np.array(parameters))

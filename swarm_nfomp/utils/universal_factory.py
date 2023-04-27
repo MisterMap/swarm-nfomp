@@ -3,14 +3,26 @@ from inspect import signature
 
 import numpy as np
 
+TYPE_ALIAS = "type_"
+
 
 class UniversalFactory:
-    def make(self, function, parameters, **kwargs):
+    def __init__(self, *args):
+        self._class_names = {}
+        for arg in args:
+            self._class_names[arg.__name__] = arg
+
+    def make(self, function=None, parameters=None, **kwargs):
         result = self._make_impl(function, parameters, **kwargs)
         return result
 
     def _make_impl(self, function, parameters, **kwargs):
+        if parameters is None:
+            raise ValueError("parameters can not be None")
         if function is None:
+            if isinstance(parameters, dict) and TYPE_ALIAS in parameters.keys():
+                function = self._class_names[parameters[TYPE_ALIAS]]
+                return self._make_impl(function, parameters, **kwargs)
             return parameters
         if function is int:
             return int(parameters)
@@ -34,6 +46,8 @@ class UniversalFactory:
     def _load_from_function(self, function, parameters, **kwargs):
         function_arguments = signature(function).parameters
         function_parameters = {}
+        if not isinstance(parameters, dict):
+            raise ValueError(f"parameters {parameters} are not dict")
         for key, value in function_arguments.items():
             annotation = value.annotation
             if annotation is inspect.Signature.empty:

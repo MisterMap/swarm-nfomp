@@ -49,8 +49,9 @@ def plot_process_function(queue: Queue, fig):
 
 
 def main():
-    task_config_path = "configs/path_planner_tasks/simple_rectangle_robot_task.yaml"
+    # task_config_path = "configs/path_planner_tasks/simple_rectangle_robot_task.yaml"
     # task_config_path = "configs/path_planner_tasks/narrow_rectangle_robot_task.yaml"
+    task_config_path = "configs/path_planner_tasks/long_road.yaml"
     # planner_config_path = "configs/planner_parameters/rrt_position2d_planner.yaml"
     # planner_config_path = "configs/planner_parameters/arrt_position2d_planner.yaml"
     planner_config_path = "configs/planner_parameters/eggs_arrt_position2d_planner.yaml"
