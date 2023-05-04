@@ -117,8 +117,7 @@ class OptimizerWithLagrangeMultipliers(OptimizerImpl):
 
     # noinspection PyMethodOverriding
     def setup(self, model_parameters, lagrange_multiplier_parameters):
-        self._optimizer = torch.optim.Adam(model_parameters, lr=self._parameters.lr,
-                                           betas=(self._parameters.beta1, self._parameters.beta2))
+        self._optimizer = torch.optim.RMSprop(model_parameters, lr=self._parameters.lr)
         self._scheduler = torch.optim.lr_scheduler.CyclicLR(self._optimizer, base_lr=self._parameters.base_lr,
                                                             max_lr=self._parameters.max_lr,
                                                             step_size_up=self._parameters.step_size_up,
@@ -261,10 +260,45 @@ class GradPreconditioner:
     def _calculate_velocity_hessian(point_count):
         hessian = np.zeros((point_count, point_count), dtype=np.float32)
         for i in range(point_count):
-            hessian[i, i] = 4
+            if i == 0:
+                hessian[i, i] = 2
+            elif i == point_count - 1:
+                hessian[i, i] = 2
+            else:
+                hessian[i, i] = 4
             if i > 0:
                 hessian[i, i - 1] = -2
                 hessian[i - 1, i] = -2
+        return hessian
+
+    @staticmethod
+    def _calculate_acceleration_hessian(point_count):
+        hessian = np.zeros((point_count, point_count))
+
+        for i in range(0, point_count):
+            if i == 0:
+                hessian[i, i] = 2
+            elif i == 1:
+                hessian[i, i] = 10
+            elif i == point_count - 1:
+                hessian[i, i] = 2
+            elif i == point_count - 2:
+                hessian[i, i] = 10
+            else:
+                hessian[i, i] = 12
+            if i == 1:
+                hessian[i, i - 1] = -4
+                hessian[i - 1, i] = -4
+            elif i == point_count - 1:
+                hessian[i, i - 1] = -4
+                hessian[i - 1, i] = -4
+            else:
+                hessian[i, i - 1] = -8
+                hessian[i - 1, i] = -8
+            if i > 2:
+                hessian[i, i - 2] = 2
+                hessian[i - 2, i] = 2
+
         return hessian
 
 
@@ -311,9 +345,12 @@ class CollisionModelPointSampler:
         self._fine_random_offset = fine_random_offset
         self._course_random_offset = course_random_offset
         self._angle_random_offset = angle_random_offset
+        self._positions = None
 
     def sample(self, result_path: MultiRobotResultPath) -> np.ndarray:
         positions: np.ndarray = result_path.numpy_positions
+        if self._positions is None:
+            self._positions = np.zeros((0, positions.shape[1], positions.shape[2]))
         points = positions[:, :, :2]
         angles = positions[:, :, 2]
 
@@ -324,6 +361,9 @@ class CollisionModelPointSampler:
                                                                             angles.shape[1]) * self._angle_random_offset
 
         positions = np.concatenate([points, angles[:, :, None]], axis=2)
+        self._positions = np.concatenate([self._positions, positions], axis=0)
+        if self._positions.shape[0] > 1000:
+            self._positions = self._positions[-1000:]
         return positions
 
 

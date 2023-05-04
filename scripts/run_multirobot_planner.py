@@ -44,7 +44,7 @@ def load_config(path):
 
 def main():
     parent_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    task_config_path = os.path.join(parent_path, "configs/multi_robot_planner_tasks/four_robot_task.yaml")
+    task_config_path = os.path.join(parent_path, "configs/multi_robot_planner_tasks/four_robot_task_random.yaml")
     planner_config_path = os.path.join(parent_path, "configs/nfomp_planners/warehouse_nfomp.yaml")
 
     task_config = load_config(task_config_path)
