@@ -136,7 +136,6 @@ class OptimizerWithLagrangeMultipliers(OptimizerImpl):
         with torch.no_grad():
             for p in self._lagrange_multiplier_parameters:
                 p.data += self._parameters.lagrange_multiplier_lr * p.grad
-                print(torch.sum(p.data ** 2).item())
 
 
 class PathOptimizedStateInitializer:

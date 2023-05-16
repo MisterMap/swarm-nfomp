@@ -139,6 +139,10 @@ class CollisionDetectionResultVisualizer:
             os.makedirs(dirname)
         self._fig.write_html(filename)
 
+    @property
+    def fig(self):
+        return self._fig
+
 
 class WarehousePathPlannerResultVisualizer(CollisionDetectionResultVisualizer):
     def visualize(self, detector: MultiRobotCollisionDetector, path: MultiRobotResultPath):
