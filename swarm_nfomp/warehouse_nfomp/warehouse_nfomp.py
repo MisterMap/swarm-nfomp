@@ -1,4 +1,5 @@
 import dataclasses
+import math
 from typing import Optional, List
 
 import numpy as np
@@ -8,6 +9,7 @@ from tqdm import tqdm
 
 from swarm_nfomp.collision_detector.multi_robot_collision_detector import MultiRobotCollisionDetector
 from swarm_nfomp.utils.math import interpolate_1d_pytorch, wrap_angles
+from swarm_nfomp.utils.metric_manager import MetricManager
 from swarm_nfomp.utils.position_array2d import PositionArray2D
 from swarm_nfomp.utils.rectangle_bounds import RectangleBounds2D
 from swarm_nfomp.utils.timer import Timer
@@ -185,15 +187,27 @@ class PathLossBuilderConfig:
 
 
 class MultiRobotPathLossBuilder:
-    def __init__(self, planner_task: MultiRobotPathPlannerTask, parameters: PathLossBuilderConfig):
+    def __init__(self, planner_task: MultiRobotPathPlannerTask, parameters: PathLossBuilderConfig,
+                 metric_manager: MetricManager):
         self._parameters = parameters
         self._planner_task = planner_task
+        self._metric_manager = metric_manager
 
     def get_loss(self, collision_model: nn.Module, optimized_state: MultiRobotPathOptimizedState):
-        loss = self._parameters.regularization_weight * self._distance_loss(optimized_state)
-        loss = loss + self._parameters.collision_weight * self._collision_loss(collision_model, optimized_state)
-        loss = loss + self._direction_constraint_loss(optimized_state)
-        loss = loss + self._parameters.second_differences_weight * self._second_differences_loss(optimized_state)
+        distance_loss = self._distance_loss(optimized_state) * self._parameters.regularization_weight
+        collision_loss = self._collision_loss(collision_model, optimized_state) * self._parameters.collision_weight
+        direction_constraint_loss = self._direction_constraint_loss(optimized_state)
+        second_differences_loss = self._second_differences_loss(
+            optimized_state) * self._parameters.second_differences_weight
+        self._metric_manager.add_metric("Path Optimization Losses", distance_loss.item(), 'distance_loss')
+        self._metric_manager.add_metric("Path Optimization Losses", collision_loss.item(), 'collision_loss')
+        self._metric_manager.add_metric("Path Optimization Losses", direction_constraint_loss.item(), 'direction_loss')
+        self._metric_manager.add_metric("Path Optimization Losses", second_differences_loss.item(), 'second_differences_loss')
+        loss = distance_loss
+        loss = loss + collision_loss
+        loss = loss + direction_constraint_loss
+        loss = loss + second_differences_loss
+        self._metric_manager.add_metric("Path Optimization Losses", loss.item(), 'total_loss')
         return loss
 
     @staticmethod
@@ -218,7 +232,9 @@ class MultiRobotPathLossBuilder:
 
     def _direction_constraint_loss(self, optimized_state: MultiRobotPathOptimizedState):
         deltas = self.non_holonomic_constraint_deltas(optimized_state.positions)
-        return self._parameters.direction_constraint_weight * torch.mean(deltas ** 2) + torch.mean(
+        constraint_deltas = torch.mean(deltas ** 2)
+        self._metric_manager.add_metric('constraint_deltas', math.sqrt(constraint_deltas.item()))
+        return self._parameters.direction_constraint_weight * constraint_deltas + torch.mean(
             optimized_state.direction_constraint_multipliers * deltas)
 
     @staticmethod

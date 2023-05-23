@@ -1,7 +1,7 @@
 collision_neural_field_model_trainer:
   collision_model_point_sampler:
-    course_random_offset: 5.0
-    fine_random_offset: 1.0
+    course_random_offset: 1.0
+    fine_random_offset: 0.2
     angle_random_offset: 1
   optimizer:
     lr: 0.05
@@ -9,7 +9,7 @@ collision_neural_field_model_trainer:
     beta2: 0.9
   collision_model_factory:
     mean: 0
-    sigma: 3.0
+    sigma: 1.0
     encoding_dimension: 128
     hidden_dimensions: [128, 128, 128]
 path_optimizer:
@@ -25,8 +25,8 @@ path_optimizer:
   loss_builder:
     regularization_weight: 0.5
     collision_weight: 0.06
-    direction_constraint_weight: 10
-    second_differences_weight: 1
+    direction_constraint_weight: 50
+    second_differences_weight: 100
   state_initializer:
     path_state_count: 100
   grad_preconditioner:

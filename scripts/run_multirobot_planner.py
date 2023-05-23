@@ -8,10 +8,12 @@ import yaml
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 
+from swarm_nfomp.utils.metric_manager import MetricManager
 from swarm_nfomp.utils.timer import Timer
 from swarm_nfomp.utils.universal_factory import UniversalFactory
 from swarm_nfomp.warehouse_nfomp.warehouse_nfomp import MultiRobotPathPlannerTask, WarehouseNFOMP
 from swarm_nfomp.warehouse_nfomp.warehouse_nfomp_matplotlib_plotter import WarehouseNfompMatplotlibPlotter
+from swarm_nfomp.warehouse_nfomp.warehouse_nfomp_metric_calculator import WarehouseNfompMetricCalculator
 from swarm_nfomp.warehouse_nfomp.warehouse_nfomp_visualizer import CollisionDetectionResultVisualizerConfig, \
     WarehousePathPlannerResultVisualizer
 
@@ -61,7 +63,8 @@ def main():
                                            task_type=clearml.Task.TaskTypes.inference, auto_connect_frameworks=False,
                                            reuse_last_task_id=True)
     parent_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    task_config_path = os.path.join(parent_path, "configs/multi_robot_planner_tasks/four_robot_task_random.yaml")
+    # task_config_path = os.path.join(parent_path, "configs/multi_robot_planner_tasks/four_robot_task_random.yaml")
+    task_config_path = os.path.join(parent_path, "configs/multi_robot_planner_tasks/two_robot_corridor.yaml")
     planner_config_path = os.path.join(parent_path, "configs/nfomp_planners/warehouse_nfomp.yaml")
 
     task_config = load_config(task_config_path)
@@ -77,9 +80,11 @@ def main():
     device_parameter = "cpu"
     planner_task = factory.make(parameters=task_config)
     robot_count = len(planner_task.collision_detector.robot_shapes)
+    metric_manager = MetricManager()
     planner = factory.make(parameters=planner_config, planner_task=planner_task, timer=global_timer,
                            device=device_parameter, input_dimension=3 * robot_count, output_dimension=robot_count,
-                           iterations=iterations)
+                           iterations=iterations, metric_manager=metric_manager)
+    metric_calculator = WarehouseNfompMetricCalculator(metric_manager)
     planner.setup()
     queue = Queue()
     process = Process(target=plot_process_function, args=(queue, task.get_logger()))
@@ -89,6 +94,10 @@ def main():
         planner.step()
         result = planner.get_result()
         result.iteration = i
+        if i % 10 == 0:
+            metric_calculator.calculate_metrics(result, planner_task.collision_detector)
+            metric_manager.log_metrics(task.get_logger())
+        metric_manager.update_iteration()
         queue.put((copy.deepcopy(planner.planner_task), copy.deepcopy(result)))
     queue.put(None)
     process.join()

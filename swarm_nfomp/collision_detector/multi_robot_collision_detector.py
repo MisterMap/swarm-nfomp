@@ -54,8 +54,8 @@ class MultiRobotCollisionDetector:
                 result[i] = True
             elif not self.outside_rectangle_region.contains(shape):
                 result[i] = True
-            for j in range(i + 1, len(transformed_robot_shapes)):
-                if transformed_robot_shapes[i].intersects(transformed_robot_shapes[j]):
+            for j in range(len(transformed_robot_shapes)):
+                if j != i and transformed_robot_shapes[i].intersects(transformed_robot_shapes[j]):
                     result[i] = True
                     break
         return np.array(result)

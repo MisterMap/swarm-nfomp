@@ -71,6 +71,20 @@ def show_position_array2d(position_array: PositionArray2D, fig, color="green"):
                color=color)
 
 
+def show_position_array2d_with_mask(position_array: PositionArray2D, fig, mask: np.ndarray, color="black",
+                                    color1="green", color2="red"):
+    if np.count_nonzero(mask):
+        plt.quiver(position_array.x[mask], position_array.y[mask], np.cos(position_array.angle)[mask],
+                   np.sin(position_array.angle)[mask],
+                   color=color1)
+    mask = np.logical_not(mask)
+    if np.count_nonzero(mask):
+        plt.quiver(position_array.x[mask], position_array.y[mask], np.cos(position_array.angle)[mask],
+               np.sin(position_array.angle)[mask],
+               color=color2)
+    plt.plot(position_array.x, position_array.y, color=color)
+
+
 def show_transformed_robot_shapes(position_array: PositionArray2D, robot_shape: Polygon, fig, color="green"):
     poly_coords = robot_shape.exterior.coords.xy
     x = poly_coords[0].tolist()
