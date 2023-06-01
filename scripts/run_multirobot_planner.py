@@ -11,7 +11,8 @@ from tqdm import tqdm
 from swarm_nfomp.utils.metric_manager import MetricManager
 from swarm_nfomp.utils.timer import Timer
 from swarm_nfomp.utils.universal_factory import UniversalFactory
-from swarm_nfomp.warehouse_nfomp.warehouse_nfomp import MultiRobotPathPlannerTask, WarehouseNFOMP
+from swarm_nfomp.warehouse_nfomp.warehouse_nfomp import MultiRobotPathPlannerTask, WarehouseNFOMP, \
+    MultiProcessWarehouseNFOMP
 from swarm_nfomp.warehouse_nfomp.warehouse_nfomp_matplotlib_plotter import WarehouseNfompMatplotlibPlotter
 from swarm_nfomp.warehouse_nfomp.warehouse_nfomp_metric_calculator import WarehouseNfompMetricCalculator
 from swarm_nfomp.warehouse_nfomp.warehouse_nfomp_visualizer import CollisionDetectionResultVisualizerConfig, \
@@ -72,7 +73,7 @@ def main():
     planner_config = load_config(planner_config_path)
     task.connect(planner_config, name="planner_config")
 
-    factory = UniversalFactory(MultiRobotPathPlannerTask, WarehouseNFOMP)
+    factory = UniversalFactory(MultiRobotPathPlannerTask, WarehouseNFOMP, MultiProcessWarehouseNFOMP)
 
     torch.manual_seed(100)
     iterations = 1500
@@ -99,6 +100,7 @@ def main():
             metric_manager.log_metrics(task.get_logger())
         metric_manager.update_iteration()
         queue.put((copy.deepcopy(planner.planner_task), copy.deepcopy(result)))
+    planner.stop()
     queue.put(None)
     process.join()
     visualizer_parameters = CollisionDetectionResultVisualizerConfig(

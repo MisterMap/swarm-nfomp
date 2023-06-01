@@ -1,5 +1,6 @@
 import dataclasses
 import math
+from multiprocessing import Queue, Process
 from typing import Optional, List
 
 import numpy as np
@@ -133,8 +134,8 @@ class OptimizerWithLagrangeMultipliers(OptimizerImpl):
             p.grad = None
 
     def step(self):
-        self._scheduler.step()
         self._optimizer.step()
+        self._scheduler.step()
         with torch.no_grad():
             for p in self._lagrange_multiplier_parameters:
                 p.data += self._parameters.lagrange_multiplier_lr * p.grad
@@ -202,7 +203,8 @@ class MultiRobotPathLossBuilder:
         self._metric_manager.add_metric("Path Optimization Losses", distance_loss.item(), 'distance_loss')
         self._metric_manager.add_metric("Path Optimization Losses", collision_loss.item(), 'collision_loss')
         self._metric_manager.add_metric("Path Optimization Losses", direction_constraint_loss.item(), 'direction_loss')
-        self._metric_manager.add_metric("Path Optimization Losses", second_differences_loss.item(), 'second_differences_loss')
+        self._metric_manager.add_metric("Path Optimization Losses", second_differences_loss.item(),
+                                        'second_differences_loss')
         loss = distance_loss
         loss = loss + collision_loss
         loss = loss + direction_constraint_loss
@@ -356,10 +358,11 @@ class PathOptimizer:
 
 
 class CollisionModelPointSampler:
-    def __init__(self, fine_random_offset: float, course_random_offset: float, angle_random_offset):
+    def __init__(self, fine_random_offset: float, course_random_offset: float, angle_random_offset, point_count: int):
         self._fine_random_offset = fine_random_offset
         self._course_random_offset = course_random_offset
         self._angle_random_offset = angle_random_offset
+        self._point_count = point_count
         self._positions = None
 
     def sample(self, result_path: MultiRobotResultPath) -> np.ndarray:
@@ -377,8 +380,8 @@ class CollisionModelPointSampler:
 
         positions = np.concatenate([points, angles[:, :, None]], axis=2)
         self._positions = np.concatenate([self._positions, positions], axis=0)
-        if self._positions.shape[0] > 1000:
-            self._positions = self._positions[-1000:]
+        if self._positions.shape[0] > self._point_count:
+            self._positions = self._positions[-self._point_count:]
         return positions
 
 
@@ -434,11 +437,9 @@ class CollisionModelFactory:
 
 class CollisionNeuralFieldModelTrainer:
     def __init__(self, timer: Timer, planner_task: MultiRobotPathPlannerTask,
-                 collision_model_point_sampler: CollisionModelPointSampler,
                  optimizer: OptimizerImpl, collision_model_factory: CollisionModelFactory,
                  device: str):
         self._timer = timer
-        self._collision_model_point_sampler = collision_model_point_sampler
         self._optimizer = optimizer
         self._collision_model_factory = collision_model_factory
         self._planner_task = planner_task
@@ -449,11 +450,11 @@ class CollisionNeuralFieldModelTrainer:
 
     def setup(self):
         self._collision_model = self._collision_model_factory.make_collision_model()
+        self._collision_model = torch.compile(self._collision_model)
         self._optimizer.setup(self._collision_model.parameters())
 
-    def learning_step(self, path: MultiRobotResultPath):
+    def learning_step(self, points):
         self._timer.tick("optimize_collision_model")
-        points = self._collision_model_point_sampler.sample(path)
         self._collision_model.requires_grad_(True)
         self._optimizer.zero_grad()
         predicted_collision = self._calculate_predicted_collision(points)
@@ -483,11 +484,13 @@ class CollisionNeuralFieldModelTrainer:
 class WarehouseNFOMP:
     def __init__(self, planner_task: MultiRobotPathPlannerTask,
                  collision_neural_field_model_trainer: CollisionNeuralFieldModelTrainer, path_optimizer: PathOptimizer,
+                 collision_model_point_sampler: CollisionModelPointSampler,
                  iterations: int, reparametrize_rate: int):
         self._reparametrize_rate = reparametrize_rate
         self.planner_task = planner_task
         self._path_optimizer = path_optimizer
         self._collision_neural_field_model_trainer = collision_neural_field_model_trainer
+        self._collision_model_point_sampler = collision_model_point_sampler
         self._iterations = iterations
         self._current_iteration = 0
 
@@ -508,9 +511,116 @@ class WarehouseNFOMP:
 
     def step(self):
         path: MultiRobotResultPath = self._path_optimizer.result_path
-        self._collision_neural_field_model_trainer.learning_step(path)
+        points = self._collision_model_point_sampler.sample(path)
+        self._collision_neural_field_model_trainer.learning_step(points)
         collision_model = self._collision_neural_field_model_trainer.collision_model
         self._path_optimizer.step(collision_model)
         if self._reparametrize_rate != -1 and self._current_iteration % self._reparametrize_rate == 0:
             self._path_optimizer.reparametrize()
         self._current_iteration += 1
+
+    def stop(self):
+        pass
+
+
+class CustomQueue():
+    def __init__(self, maximal_previous_result_retry_count: int = None):
+        self._queue = Queue()
+        self._previous_result = None
+        self._maximal_previous_result_retry_count = maximal_previous_result_retry_count
+        self._previous_result_retry_count = 0
+
+    def should_use_previous_result(self):
+        if self._previous_result is None:
+            return False
+        if self._maximal_previous_result_retry_count is None:
+            return True
+        return self._previous_result_retry_count < self._maximal_previous_result_retry_count
+
+    def get(self, block=True, timeout=None):
+        queue_size = self._queue.qsize()
+        if queue_size == 0 and self.should_use_previous_result():
+            self._previous_result_retry_count += 1
+            return self._previous_result
+        for i in range(queue_size - 1):
+            self._queue.get()
+        self._previous_result = self._queue.get(block, timeout)
+        self._previous_result_retry_count = 1
+        return self._previous_result
+
+    def put(self, item, block=True, timeout=None):
+        self._queue.put(item, block, timeout)
+
+
+class MultiProcessWarehouseNFOMP(WarehouseNFOMP):
+    def __init__(self, planner_task: MultiRobotPathPlannerTask,
+                 collision_neural_field_model_trainer: CollisionNeuralFieldModelTrainer, path_optimizer: PathOptimizer,
+                 collision_model_point_sampler: CollisionModelPointSampler,
+                 iterations: int, reparametrize_rate: int):
+        super().__init__(planner_task, collision_neural_field_model_trainer, path_optimizer,
+                         collision_model_point_sampler, iterations,
+                         reparametrize_rate)
+        self._path_queue = CustomQueue()
+        self._collision_model_queue = CustomQueue(10)
+        self._points_sampler_queue = CustomQueue()
+        self._current_iteration = 0
+        self._points_sampler_process: Optional[Process] = None
+        self._collision_model_process: Optional[Process] = None
+
+    def setup(self):
+        super().setup()
+        self._path_queue.put(self._path_optimizer.result_path)
+        self._collision_model_process = Process(target=self.collision_model_function)
+        self._collision_model_process.start()
+        self._points_sampler_process = Process(target=self.points_sampler_function)
+        self._points_sampler_process.start()
+
+    def collision_model_function(self):
+        while True:
+            result = self.collision_model_step()
+            if not result:
+                break
+
+    def collision_model_step(self):
+        points = self._points_sampler_queue.get()
+        if points is None:
+            return False
+        self._collision_neural_field_model_trainer.learning_step(points)
+        collision_model = self._collision_neural_field_model_trainer.collision_model
+        self._collision_model_queue.put(collision_model)
+        return True
+
+    def points_sampler_function(self):
+        while True:
+            result = self.points_sampler_step()
+            if not result:
+                break
+
+    def points_sampler_step(self):
+        path = self._path_queue.get()
+        if path is None:
+            self._points_sampler_queue.put(None)
+            return False
+        points = self._collision_model_point_sampler.sample(path)
+        self._points_sampler_queue.put(points)
+        return True
+
+    def step(self):
+        self.path_step()
+
+    def path_step(self):
+        collision_model = self._collision_model_queue.get()
+        if collision_model is None:
+            return False
+        self._path_optimizer.step(collision_model)
+        if self._reparametrize_rate != -1 and self._current_iteration % self._reparametrize_rate == 0:
+            self._path_optimizer.reparametrize()
+        path: MultiRobotResultPath = self._path_optimizer.result_path
+        self._path_queue.put(path)
+        self._current_iteration += 1
+        return True
+
+    def stop(self):
+        self._path_queue.put(None)
+        self._points_sampler_process.join()
+        self._collision_model_process.join()

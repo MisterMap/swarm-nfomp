@@ -36,7 +36,7 @@ class WarehouseNfompMatplotlibPlotter:
 
     def show_robot_paths(self, robot_shapes, result: MultiRobotResultPath, detector: MultiRobotCollisionDetector):
         robot_positions: List[PositionArray2D] = [PositionArray2D.from_vec(x) for x in result.numpy_positions]
-        is_collision = np.zeros((len(robot_positions), len(robot_positions[0])), dtype=np.bool)
+        is_collision = np.zeros((len(robot_positions), len(robot_positions[0])), dtype=bool)
         for i in range(len(robot_positions)):
             is_collision[i] = detector.is_collision_for_each_robot(robot_positions[i])
         for is_collision, path in zip(is_collision.T, result.robot_paths):

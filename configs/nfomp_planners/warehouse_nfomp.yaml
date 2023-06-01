@@ -1,8 +1,9 @@
+collision_model_point_sampler:
+  course_random_offset: 1.0
+  fine_random_offset: 0.2
+  angle_random_offset: 1
+  point_count: 1000
 collision_neural_field_model_trainer:
-  collision_model_point_sampler:
-    course_random_offset: 1.0
-    fine_random_offset: 0.2
-    angle_random_offset: 1
   optimizer:
     lr: 0.01
     beta1: 0.9
@@ -33,4 +34,4 @@ path_optimizer:
     velocity_hessian_weight: 300
 
 reparametrize_rate: 10
-type_: WarehouseNFOMP
+type_: MultiProcessWarehouseNFOMP
