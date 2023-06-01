@@ -4,7 +4,7 @@ collision_neural_field_model_trainer:
     fine_random_offset: 0.2
     angle_random_offset: 1
   optimizer:
-    lr: 0.05
+    lr: 0.01
     beta1: 0.9
     beta2: 0.9
   collision_model_factory:
@@ -25,12 +25,12 @@ path_optimizer:
   loss_builder:
     regularization_weight: 0.5
     collision_weight: 0.06
-    direction_constraint_weight: 50
-    second_differences_weight: 100
+    direction_constraint_weight: 30
+    second_differences_weight: 30
   state_initializer:
     path_state_count: 100
   grad_preconditioner:
-    velocity_hessian_weight: 50
+    velocity_hessian_weight: 300
 
 reparametrize_rate: 10
 type_: WarehouseNFOMP
