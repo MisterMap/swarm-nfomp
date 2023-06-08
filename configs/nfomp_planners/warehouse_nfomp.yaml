@@ -8,6 +8,8 @@ collision_neural_field_model_trainer:
     lr: 0.01
     beta1: 0.9
     beta2: 0.9
+    gamma: 0.25
+    step_size: 100
   collision_model_factory:
     mean: 0
     sigma: 1.0
@@ -25,7 +27,7 @@ path_optimizer:
     step_size_down: 100
   loss_builder:
     regularization_weight: 0.5
-    collision_weight: 0.06
+    collision_weight: 0.003
     direction_constraint_weight: 30
     second_differences_weight: 30
   state_initializer:
@@ -33,5 +35,7 @@ path_optimizer:
   grad_preconditioner:
     velocity_hessian_weight: 300
 
+seed: 200
 reparametrize_rate: 10
-type_: MultiProcessWarehouseNFOMP
+collision_model_optimization_rate: 3
+type_: WarehouseNFOMP

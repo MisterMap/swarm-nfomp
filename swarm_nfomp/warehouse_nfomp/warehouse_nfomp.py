@@ -43,6 +43,7 @@ class MultiRobotPathOptimizedState:
     direction_constraint_multipliers: torch.Tensor
     start_position: torch.Tensor  # [n_robots, 3]
     goal_position: torch.Tensor  # [n_robots, 3]
+    device: str
 
     @property
     def result_path(self) -> MultiRobotResultPath:
@@ -58,8 +59,8 @@ class MultiRobotPathOptimizedState:
     def reparametrize(self):
         distances = self.calculate_distances()
         old_times = torch.cumsum(distances, dim=0)
-        old_times = torch.cat([torch.zeros(1), old_times], dim=0)
-        new_times = torch.linspace(0, old_times[-1], old_times.shape[0])
+        old_times = torch.cat([torch.zeros(1, device=self.device), old_times], dim=0)
+        new_times = torch.linspace(0, old_times[-1], old_times.shape[0], device=self.device)
         positions: torch.Tensor = self.positions
         reshaped_positions = positions.reshape(self.positions.shape[0], -1)
         interpolated_positions = interpolate_1d_pytorch(reshaped_positions, old_times, new_times)[1:-1]
@@ -84,26 +85,35 @@ class OptimizerImplConfig:
     lr: float
     beta1: float
     beta2: float
+    step_size: int
+    gamma: float
 
 
 class OptimizerImpl:
     def __init__(self, parameters: OptimizerImplConfig):
         self._optimizer = None
+        self._scheduler = None
         self._parameters = parameters
 
     def setup(self, model_parameters):
         self._optimizer = torch.optim.Adam(model_parameters, lr=self._parameters.lr,
                                            betas=(self._parameters.beta1, self._parameters.beta2))
+        self._scheduler = torch.optim.lr_scheduler.StepLR(self._optimizer, step_size=self._parameters.step_size,
+                                                          gamma=self._parameters.gamma)
 
     def zero_grad(self):
         self._optimizer.zero_grad()
 
     def step(self):
         self._optimizer.step()
+        self._scheduler.step()
 
 
 @dataclasses.dataclass
-class OptimizerWithLagrangeMultipliersConfig(OptimizerImplConfig):
+class OptimizerWithLagrangeMultipliersConfig:
+    lr: float
+    beta1: float
+    beta2: float
     lagrange_multiplier_lr: float
     base_lr: float
     max_lr: float
@@ -111,12 +121,12 @@ class OptimizerWithLagrangeMultipliersConfig(OptimizerImplConfig):
     step_size_down: int
 
 
-class OptimizerWithLagrangeMultipliers(OptimizerImpl):
+class OptimizerWithLagrangeMultipliers:
     def __init__(self, parameters: OptimizerWithLagrangeMultipliersConfig):
-        super().__init__(parameters)
         self._parameters = parameters
         self._lagrange_multiplier_parameters = None
         self._scheduler = None
+        self._optimizer = None
 
     # noinspection PyMethodOverriding
     def setup(self, model_parameters, lagrange_multiplier_parameters):
@@ -161,7 +171,8 @@ class PathOptimizedStateInitializer:
                 goal_position=goal_position,
                 direction_constraint_multipliers=torch.zeros(self._path_state_count + 1, len(self._planner_task.start),
                                                              requires_grad=True,
-                                                             device=self._device, dtype=torch.float32)
+                                                             device=self._device, dtype=torch.float32),
+                device=self._device
             )
 
     def _initialize_positions(self) -> torch.Tensor:
@@ -171,11 +182,12 @@ class PathOptimizedStateInitializer:
         trajectory = torch.zeros(self._path_state_count + 2, len(start_point), 3, requires_grad=True,
                                  device=self._device, dtype=torch.float32)
         for i in range(len(start_point)):
-            trajectory[:, i, 0] = torch.linspace(start_point[i, 0], goal_point[i, 0], trajectory_length)
+            trajectory[:, i, 0] = torch.linspace(start_point[i, 0], goal_point[i, 0], trajectory_length,
+                                                 device=self._device)
             trajectory[:, i, 1] = torch.linspace(start_point[i, 1], goal_point[i, 1], trajectory_length)
             trajectory[:, i, 2] = start_point[i, 2] + torch.linspace(0,
                                                                      wrap_angles(goal_point[i, 2] - start_point[i, 2]),
-                                                                     trajectory_length)
+                                                                     trajectory_length, device=self._device)
         return trajectory
 
 
@@ -189,7 +201,8 @@ class PathLossBuilderConfig:
 
 class MultiRobotPathLossBuilder:
     def __init__(self, planner_task: MultiRobotPathPlannerTask, parameters: PathLossBuilderConfig,
-                 metric_manager: MetricManager):
+                 metric_manager: MetricManager, device):
+        self._device = device
         self._parameters = parameters
         self._planner_task = planner_task
         self._metric_manager = metric_manager
@@ -225,9 +238,8 @@ class MultiRobotPathLossBuilder:
         positions = positions.reshape(positions.shape[0], -1)
         return torch.mean(torch.nn.functional.softplus(collision_model(positions)))
 
-    @staticmethod
-    def get_intermediate_points(positions):
-        t = torch.rand(positions.shape[0] - 1)
+    def get_intermediate_points(self, positions):
+        t = torch.rand(positions.shape[0] - 1, device=self._device)
         delta = positions[1:] - positions[:-1]
         delta[:, :, 2] = wrap_angles(delta[:, :, 2])
         return positions[1:] + t[:, None, None] * delta
@@ -428,11 +440,12 @@ class ONF(nn.Module):
 
 
 class CollisionModelFactory:
-    def __init__(self, parameters: ONFModelConfig):
+    def __init__(self, parameters: ONFModelConfig, device):
+        self._device = device
         self._parameters = parameters
 
     def make_collision_model(self):
-        return ONF(self._parameters)
+        return ONF(self._parameters).to(self._device)
 
 
 class CollisionNeuralFieldModelTrainer:
@@ -450,7 +463,7 @@ class CollisionNeuralFieldModelTrainer:
 
     def setup(self):
         self._collision_model = self._collision_model_factory.make_collision_model()
-        self._collision_model = torch.compile(self._collision_model)
+        # self._collision_model = torch.compile(self._collision_model)
         self._optimizer.setup(self._collision_model.parameters())
 
     def learning_step(self, points):
@@ -485,13 +498,14 @@ class WarehouseNFOMP:
     def __init__(self, planner_task: MultiRobotPathPlannerTask,
                  collision_neural_field_model_trainer: CollisionNeuralFieldModelTrainer, path_optimizer: PathOptimizer,
                  collision_model_point_sampler: CollisionModelPointSampler,
-                 iterations: int, reparametrize_rate: int):
+                 iterations: int, reparametrize_rate: int, collision_model_optimization_rate):
         self._reparametrize_rate = reparametrize_rate
         self.planner_task = planner_task
         self._path_optimizer = path_optimizer
         self._collision_neural_field_model_trainer = collision_neural_field_model_trainer
         self._collision_model_point_sampler = collision_model_point_sampler
         self._iterations = iterations
+        self._collision_model_optimization_rate = collision_model_optimization_rate
         self._current_iteration = 0
 
     def plan(self) -> MultiRobotResultPath:
@@ -512,7 +526,8 @@ class WarehouseNFOMP:
     def step(self):
         path: MultiRobotResultPath = self._path_optimizer.result_path
         points = self._collision_model_point_sampler.sample(path)
-        self._collision_neural_field_model_trainer.learning_step(points)
+        if self._current_iteration % self._collision_model_optimization_rate == 0:
+            self._collision_neural_field_model_trainer.learning_step(points)
         collision_model = self._collision_neural_field_model_trainer.collision_model
         self._path_optimizer.step(collision_model)
         if self._reparametrize_rate != -1 and self._current_iteration % self._reparametrize_rate == 0:
@@ -523,7 +538,7 @@ class WarehouseNFOMP:
         pass
 
 
-class CustomQueue():
+class CustomQueue:
     def __init__(self, maximal_previous_result_retry_count: int = None):
         self._queue = Queue()
         self._previous_result = None
